@@ -1,0 +1,27 @@
+Metadata-Version: 1.1
+Name: utils4dd
+Version: 1.0
+Summary: Python Distribution Utilities
+Home-page: UNKNOWN
+Author: David Dennetiere
+Author-email: david.dennetiere@synchrotron-soleil.fr
+License: UNKNOWN
+Description: UNKNOWN
+Platform: UNKNOWN
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Environment :: Web Environment
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Python Software Foundation License
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Programming Language :: Python
+Classifier: Topic :: Software Development :: Bug Tracking
+Requires: setuptools
+Requires: numpy
+Requires: pandas
+Requires: xarray
+Requires: pytables
+Requires: tkinter
+Requires: plotly
+Requires: scipy
