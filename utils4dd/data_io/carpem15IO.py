@@ -183,6 +183,8 @@ class InputFile(object):
         ret = subprocess.run(r"RR2 "+filename, shell=True, capture_output=True)
         self.return_str = ret.stdout.decode('latin-1')
         self.parse_return_run()
+        assert self.result_run["harmonic 1"].shape[0] == int(self.input_data["steps"]), \
+            RuntimeError(f"Something went wrong during run, RR2 returned : {ret.stderr.decode('latin-1')}")
         
     def parse_return_run(self):
         self.result_run = {}
