@@ -14,11 +14,13 @@ datapath = r"D:/Dennetiere/Programmes_C++/carpem_sources/data"
 install_dir = r"D:/Dennetiere/Programmes_C++/carpem/bin"
 
 class InputFile(object):
-    def __init__(self):
+    def __init__(self, filename=None):
         self.input_data = {}
         self.result_run = {}
         self.result_str = {}
         self.legend_result = []
+        self.temporeneo_filename = filename
+        self.generated_temporeneo_filename = None
         # Pattern definitions for specific sections
         self.patterns = {
             "version": r"version ([\d.]+)",
@@ -51,10 +53,13 @@ class InputFile(object):
             "debye_waller": r"([\d\.]+)\s+\*\sDebye-Waller coefficient",
             "vaccum_index": r"([\d\.]+)\s+([\d\.]+)\s+\*\s+Optical index of vacuum",
         }
+        if filename is not None:
+            self.parse_temporeneo(filename)
         
     def use_default_temporeneo(self):
         filename = os.path.join(work_dir, "temporeneo")
         assert os.path.exists(filename), ValueError(f"No temporeneo file in working directory {work_dir}")
+        self.temporeneo_filename = filename
         return filename
         
     def parse_temporeneo(self, filename=None):
@@ -74,7 +79,7 @@ class InputFile(object):
         
         # Post-processing to clean up single-item lists
         for key, value in data.items():
-            if len(value) == 1:
+            if len(value) == 1 and key!='boundaries':
                 data[key] = value[0]
         
         self.input_data = data
@@ -92,19 +97,21 @@ class InputFile(object):
     def generate_temporeneo(self, filename=None):
         if filename is None:
             filename = self.use_default_temporeneo()
+        self.generated_temporeneo_filename = filename
             
         result = []
          # Header
         result.append(f"version {self.input_data['version']}   * CARPEM version used for building this file *")
 
         # MCA data section
-        result.append("# MCA data section")
-        result.append(f"# {self.input_data['mca_params'][0]} {self.input_data['mca_params'][1]} {self.input_data['mca_params'][2]}    * params MCA : depth dutyC nbr of periods  *")
-        result.append(f"# {self.input_data['index_data_type'][0]} {self.input_data['index_data_type'][1]}     *\t index data type (Henke /Palik) ; nbr of layers / period *")
+        if 'mca_params' in self.input_data.keys():
+            result.append("# MCA data section")
+            result.append(f"# {self.input_data['mca_params'][0]} {self.input_data['mca_params'][1]} {self.input_data['mca_params'][2]}    * params MCA : depth dutyC nbr of periods  *")
+            result.append(f"# {self.input_data['index_data_type'][0]} {self.input_data['index_data_type'][1]}     *\t index data type (Henke /Palik) ; nbr of layers / period *")
 
-        # Layer data
-        for layer in self.input_data['layer_data']:
-            result.append(f"# {layer[0]} {layer[1]} {layer[2]} * thickness material *")
+            # Layer data
+            for layer in self.input_data['layer_data']:
+                result.append(f"# {layer[0]} {layer[1]} {layer[2]} * thickness material *")
 
         # Sub-gratings
         result.append(f"{self.input_data['sub_gratings']}  * Number of sub-gratings  *   ")
@@ -186,13 +193,16 @@ class InputFile(object):
             
 class CarpemFile(InputFile):
     def __init__(self, filename):
-        super(self).__init__()
+        super().__init__(filename)
         self.output_data = None
+        self.data_filename = filename
         
-    def read_data(self, filename=None):
-        if filename is None:
-            assert self.result_run != {}, ValueError("Run file first")
-            self.output_data = np.loadtxt(self.result_run)
+    def read_data(self):
+        with open(self.data_filename, "r") as filin:
+            for line in filin.readlines():
+                if line[0] == "#":
+                    self.legend_result = [line[i: i+14].replace("#",'').strip() for i in range(0, len(line)-1, 14)]
+        self.output_data = np.loadtxt(self.data_filename)
         
 if __name__ == "__main__":
     fi = InputFile()
@@ -208,4 +218,10 @@ if __name__ == "__main__":
     print(fi.result_run)
     print(fi.result_run["harmonic 1"].shape)
     print()
+
+    cf = CarpemFile(r"D:\Dennetiere\Programmes_C++\carpem\data\C20-Pt-d100-S-H-2-0,98") 
+    cf.show_data()
+    new_temporeneo_cf = cf.generate_temporeneo(os.path.join(work_dir,"temporeneo_from_carpemfile"))
+    cf.run(new_temporeneo_cf)
+    print(cf.result_run)
     
