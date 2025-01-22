@@ -50,6 +50,7 @@ class InputFile(object):
             "polarization": r"(\d+)\s+\*Polarization",
             "n_harm": r"(\d+)\s+\*\snum of computed  harmonics",
             "scan_type": r"(\d+)\s+\*scan type",
+            "tuning_order": r"(\d)\s+\*  Tuning order",
             "output_phase": r"(\d+)\s+\*\s1 output phase",
             "regulating_factor": r"(\d+)\s+\*\s+Factor which regulates step",
             "debye_waller": r"([\d\.]+)\s+\*\sDebye-Waller coefficient",
@@ -165,6 +166,8 @@ class InputFile(object):
         result.append(f" {self.input_data['polarization']}  *Polarization: 1=S; 2=P * ")
         result.append(f" {self.input_data['n_harm']} * num of computed  harmonics * ")
         result.append(f" {self.input_data['scan_type']}   *scan type 0= fixed incidence; 1=fixed deviation; 3=fixed Omega; 4 fixed C ratio *")
+        if int(self.input_data["scan_type"]) > 1:
+            result.append(f" {self.input_data['tuning_order']}   *  Tuning order (may be different from used order in scan types 3 or 4 * ")
         result.append(f" {self.input_data['output_phase']}   * 1 output phase, 0 no phase output *")
         result.append(f" {self.input_data['regulating_factor']} *  Factor which regulates step refining in RK integration: 8 is safe *")
         result.append(f" {self.input_data['debye_waller']} * Debye-Waller coefficient of line placement, if 0 no phase uncertainty * ")
