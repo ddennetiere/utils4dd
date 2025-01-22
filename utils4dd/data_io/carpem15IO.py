@@ -39,7 +39,9 @@ class InputFile(object):
             "thickness": r"([\d.]+)\s+\*\s+thickness \(Angström\)",
             "boundaries": r"([\d.]+)\s([\d.]+)\s+\*\s+boundaries of the 'a' area",
             "energy": r"([\d.]+)\s+\*\s+Energy",
-            "angle": r"([\d.]+)\s+\*\s+angle.*",
+            "energy_step": r"([\d.]+)\s+\*\s+energy step",
+            "angle": r"([\d.]+)\s+\*\s+angle  or",
+            "angle_step": r"([\d.]+)\s+\*\s+angle step",
             "steps": r"([\d.]+)\s+\*\s+number of computation steps",
             "number_windows": r"(\d+)\s+\*\snum windows",
             "order_use": r"(\d+)\s+\*\sOrder of use",
@@ -152,9 +154,9 @@ class InputFile(object):
 
         # Energy and angle data
         result.append(f" {self.input_data['energy']}  * Energy * ")
-        result.append(f" {self.input_data['angle'][0]}   * angle  or C_RATIO according to scan parameter* ")
-        result.append(" 0  * energy step * ")
-        result.append(f" {self.input_data['angle'][1]}  * angle step * ")
+        result.append(f" {self.input_data['angle']}   * angle  or C_RATIO according to scan parameter* ")
+        result.append(f" {self.input_data['energy_step']}  * energy step * ")
+        result.append(f" {self.input_data['angle_step']}  * angle step * ")
         result.append(f" {self.input_data['steps']}   * number of computation steps * ")
         result.append(f" {self.input_data['number_windows']}   * num windows (+/- displayed orders) *  ")
         result.append(f" {self.input_data['order_use']}        * Order of use (+ is grazing on exit) *   ")
@@ -221,6 +223,8 @@ if __name__ == "__main__":
 
     cf = CarpemFile(r"D:\Dennetiere\Programmes_C++\carpem\data\C20-Pt-d100-S-H-2-0,98") 
     cf.show_data()
+    cf.read_data()
+    print(cf.output_data)
     new_temporeneo_cf = cf.generate_temporeneo(os.path.join(work_dir,"temporeneo_from_carpemfile"))
     cf.run(new_temporeneo_cf)
     print(cf.result_run)
