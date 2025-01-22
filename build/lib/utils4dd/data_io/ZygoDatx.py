@@ -14,6 +14,7 @@ from tkinter import filedialog
 from pathlib import Path
 import h5py as h5
 import numpy as np
+from utils4dd.data_io.HeightMap import HeightMap
 
 class Node:
 
@@ -60,9 +61,10 @@ class Node:
             if len(node)!=0:
                 node.dump(level+1)
 
-class DatxFile(object):
+class DatxFile(HeightMap):
     def __init__(self):
         ## (str) The full path to access the file
+        super().__init__()
         self.filepath=""
         ## (Node) The tree of metadata constructed from the 'MetaData' group of the datx file
         self.metatree=Node('Root')

@@ -25,8 +25,9 @@ import logging
 import numpy as np
 import struct
 from pathlib import Path
-from ctypes import sizeof, BigEndianStructure, LittleEndianStructure, c_float, c_char, c_byte, c_ubyte, c_short, \
-    c_ushort, c_int, c_uint
+from ctypes import BigEndianStructure, LittleEndianStructure, c_float, c_char, c_ubyte, c_short, c_int, c_uint
+import xarray as xr
+from utils4dd.data_io.HeightMap import HeightMap
 
 ZygoSoftwareType = ("Unknown", "MetroPro", "MetroBasic", "Diagnostic")
 acqMode = ("phase", "fringe", "scan")
@@ -194,7 +195,7 @@ __pdoc__[
     'ZygoBEattributes.LateralResolution'] = "(`float`)  Lateral resolving power of a camera pixel in meters/pixel. " \
                                             "A value of 0 means that the value is unknown."
 __pdoc__[
-    'ZygoBEattributes.PhaseRes'] = "(`short`)  The resolution of the phase data points. LowRes means that each fringe "\
+    'ZygoBEattributes.PhaseRes'] = "(`short`)  The resolution of the phase data points. LowRes means that each fringe " \
                                    "is represented by 4096 counts. HighRes means that each fringe is represented " \
                                    "by 32768 counts. SuperRes, each fringe is 131072 counts"
 __pdoc__[
@@ -385,7 +386,7 @@ __pdoc__['Header.BEattributes'] = "(`ZygoBEattributes`)  The attributes defined 
 __pdoc__['Header.LEattributes'] = "(`ZygoLEattributes`)  The attributes defined in the `ZygoLEattributes` structure."
 
 
-class DatFile(object):
+class DatFile(HeightMap):
     """  This class wraps the structure of a Zygo data file stored in the .dat format of MX
 
     The `openFile` function only loads the measurement metadata from the file header into the object
@@ -393,7 +394,7 @@ class DatFile(object):
     """
 
     def __init__(self):
-        self.filepath = ""
+        super().__init__()
         """ (`string`) The full path to access the file"""
         self.header = Header()
         """ (`Header`) File header containing all metadata relative to a measurement"""
@@ -449,7 +450,6 @@ class DatFile(object):
             nres = 32768
         else:
             nres = 131072
-        # print("Fringe resolution=",nres)
         scale = multiplier * h.BEattributes.IntfScaleFactor * h.BEattributes.ObliquityFactor * \
                 h.BEattributes.WavelengthIn / nres
 
@@ -464,7 +464,12 @@ class DatFile(object):
                 else:
                     linPhase[i] = scale * ival[0]
                 i += 1
-        return Phase
+        self.height = xr.DataArray(Phase,
+                                   [("y", self.getPixel() * (
+                                           np.arange(self.header.PhaseHeight) - self.header.PhaseHeight / 2)),
+                                    ("x", self.getPixel() * (
+                                            np.arange(self.header.PhaseWidth) - self.header.PhaseWidth / 2))])
+        return self.height
 
     # return pixel size in m
     def getPixel(self):
@@ -497,32 +502,8 @@ class DatFile(object):
                     " version " + str(h.SoftInfo.Version) +
                     " date " + str(h.SoftInfo.Date) + 'ASCII')
         logger.info("Origin X " + str(self.header.PhaseOriginX) + "  Origin Y " + str(self.header.PhaseOriginY))
-        logger.info(f"Data size  {datfile.header.PhaseHeight} x {datfile.header.PhaseWidth}")
+        logger.info(f"Data size  {self.header.PhaseHeight} x {self.header.PhaseWidth}")
         logger.info("Pixel size " + str(self.getPixel()))
         location = self.header.LEattributes.Coordinates
         logger.info(f"Data Location  ({location.XPosition}, {location.YPosition}, {location.ZPosition} )")
-
-
-if __name__ == "__main__":
-    from plotly.express import imshow
-    import plotly.io as pio
-    import numpy as np
-    import xarray as xr
-    import sys
-    pio.renderers.default = "browser"
-
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.DEBUG)
-    root.addHandler(handler)
-    datfile = DatFile()
-    datfile.openFile(r"Y:\Mesures-2024\DI-61020_SWING\A Stitched Scans\Stitched_Scan_207_topStripe.dat")
-    datfile.info()
-    height = xr.DataArray(datfile.getHeight(),
-                          [("x", datfile.getPixel()*(np.arange(datfile.header.PhaseHeight)-datfile.header.PhaseHeight/2)),
-                           ("y", datfile.getPixel()*(np.arange(datfile.header.PhaseWidth)-datfile.header.PhaseWidth/2))])
-    logger.info(str(height))
-    fig = imshow(height)
-    fig.show()
 

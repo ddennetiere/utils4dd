@@ -1,3 +1,5 @@
 # ignore all logs
 *.log
-
+utils4dd/data_io/__pycache__/*
+*.pyc
+.idea/*

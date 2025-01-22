@@ -1,13 +1,9 @@
-Metadata-Version: 1.1
+Metadata-Version: 2.1
 Name: utils4dd
 Version: 1.0
 Summary: Python Distribution Utilities
-Home-page: UNKNOWN
 Author: David Dennetiere
 Author-email: david.dennetiere@synchrotron-soleil.fr
-License: UNKNOWN
-Description: UNKNOWN
-Platform: UNKNOWN
 Classifier: Development Status :: 4 - Beta
 Classifier: Environment :: Console
 Classifier: Environment :: Web Environment
@@ -25,3 +21,4 @@ Requires: pytables
 Requires: tkinter
 Requires: plotly
 Requires: scipy
+License-File: LICENSE
