@@ -36,7 +36,7 @@ class InputFile(object):
             "layers_in_one_period": r"(\d+)\s+\*\s+Number of layers in one period of grating",
             "period_in_subgrating": r"(\d+)\s+\* Number of layer periods in grating",
             "material_data": r"\s+([\d.]+)\s(\S+)\s\*\s+material in the '(a|b)' area",
-            "thickness": r"([\d.]+)\s+\*\s+thickness \(Angström\)",
+            "thickness": r"([\d.]+)\s+\*\s+thickness \(Angstr",
             "boundaries": r"([\d.]+)\s([\d.]+)\s+\*\s+boundaries of the 'a' area",
             "energy": r"([\d.]+)\s+\*\s+Energy",
             "energy_step": r"([\d.]+)\s+\*\s+energy step",
@@ -50,6 +50,7 @@ class InputFile(object):
             "polarization": r"(\d+)\s+\*Polarization",
             "n_harm": r"(\d+)\s+\*\snum of computed  harmonics",
             "scan_type": r"(\d+)\s+\*scan type",
+            "tuning_order": r"(\d)\s+\*  Tuning order",
             "output_phase": r"(\d+)\s+\*\s1 output phase",
             "regulating_factor": r"(\d+)\s+\*\s+Factor which regulates step",
             "debye_waller": r"([\d\.]+)\s+\*\sDebye-Waller coefficient",
@@ -92,10 +93,17 @@ class InputFile(object):
             print(key, val)
             
     def change_parameter(self, name, val):
-        assert name in self.patterns.keys(), ValueError(f"name must be in {self.patterns.keys()}")
-        assert name in self.input_data.keys(), ValueError(f"name must be in {self.input_data.keys()}")
+        if 'mca_params' in self.input_data.keys() and name in ["mca_params", "layer_data"]:
+            self.update_sub_gratings(name, val)
+        else:
+            assert name in self.patterns.keys(), ValueError(f"name must be in {self.patterns.keys()}")
+            assert name in self.input_data.keys(), ValueError(f"name must be in {self.input_data.keys()}")   
+            self.input_data[name] = val
+
+    def update_sub_grating(self, name, val):
         self.input_data[name] = val
-                
+        pass
+
     def generate_temporeneo(self, filename=None):
         if filename is None:
             filename = self.use_default_temporeneo()
@@ -165,6 +173,8 @@ class InputFile(object):
         result.append(f" {self.input_data['polarization']}  *Polarization: 1=S; 2=P * ")
         result.append(f" {self.input_data['n_harm']} * num of computed  harmonics * ")
         result.append(f" {self.input_data['scan_type']}   *scan type 0= fixed incidence; 1=fixed deviation; 3=fixed Omega; 4 fixed C ratio *")
+        if int(self.input_data["scan_type"]) > 1:
+            result.append(f" {self.input_data['tuning_order']}   *  Tuning order (may be different from used order in scan types 3 or 4 * ")
         result.append(f" {self.input_data['output_phase']}   * 1 output phase, 0 no phase output *")
         result.append(f" {self.input_data['regulating_factor']} *  Factor which regulates step refining in RK integration: 8 is safe *")
         result.append(f" {self.input_data['debye_waller']} * Debye-Waller coefficient of line placement, if 0 no phase uncertainty * ")
@@ -183,6 +193,8 @@ class InputFile(object):
         ret = subprocess.run(r"RR2 "+filename, shell=True, capture_output=True)
         self.return_str = ret.stdout.decode('latin-1')
         self.parse_return_run()
+        assert self.result_run["harmonic 1"].shape[0] == int(self.input_data["steps"]), \
+            RuntimeError(f"Something went wrong during run, RR2 returned : {ret.stderr.decode('latin-1')}")
         
     def parse_return_run(self):
         self.result_run = {}
@@ -207,25 +219,28 @@ class CarpemFile(InputFile):
         self.output_data = np.loadtxt(self.data_filename)
         
 if __name__ == "__main__":
-    fi = InputFile()
-    fi.parse_temporeneo()
-    fi.show_data()
-    #print(fi.input_data)
-    #print(fi.generate_temporeneo("temporeneo_regen"))
-    fi.change_parameter("n_harm", 2)
-    new_temporeneo = fi.generate_temporeneo(os.path.join(work_dir,"temporeneo_regen"))
-    fi.run(new_temporeneo)
-    print("return:")
-    print(fi.legend_result)
-    print(fi.result_run)
-    print(fi.result_run["harmonic 1"].shape)
-    print()
+    # fi = InputFile()
+    # fi.parse_temporeneo()
+    # fi.show_data()
+    # #print(fi.input_data)
+    # #print(fi.generate_temporeneo("temporeneo_regen"))
+    # fi.change_parameter("n_harm", 4)
+    # fi.change_parameter("number_windows", 8)
+    # new_temporeneo = fi.generate_temporeneo(os.path.join(work_dir,"temporeneo_regen"))
+    # print(f"running {new_temporeneo}")
+    # fi.run(new_temporeneo)
+    # print("return:")
+    # print(fi.legend_result)
+    # print(fi.result_run)
+    # print(fi.result_run["harmonic 1"].shape)
+    # print()
 
-    cf = CarpemFile(r"D:\Dennetiere\Programmes_C++\carpem\data\C20-Pt-d100-S-H-2-0,98") 
+    cf = CarpemFile(r"D:\Dennetiere\Programmes_C++\carpem\data\MLtest2500ev") 
     cf.show_data()
     cf.read_data()
     print(cf.output_data)
     new_temporeneo_cf = cf.generate_temporeneo(os.path.join(work_dir,"temporeneo_from_carpemfile"))
+    print(f"running {new_temporeneo_cf}")
     cf.run(new_temporeneo_cf)
     print(cf.result_run)
     
