@@ -1,0 +1,54 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "utils4dd"
+version = "2025.10.29"
+description = "Python tools for David Dennetiere"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Cecill V2.1" }
+authors = [{ name = "David Dennetiere", email = "david.dennetiere@synchrotron-soleil.fr"},]
+keywords = ["X-Ray", "plot", "optics"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: CEA CNRS Inria Logiciel Libre License, version 2.1 (CeCILL-2.1)",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Physics"
+]
+urls = { Homepage = "https://github.com/ddennetiere/utils4dd"}
+
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.14",
+  "pandas>=2.3",
+  "xarray>=2024.6",
+  "xraylib>=4.2.0"
+]
+
+[project.optional-dependencies]
+viz = [
+  "plotly>=5.15",
+  "kaleido>=0.2.1"
+]
+windows = [
+  "pywin32>=311; platform_system == 'Windows'"
+  ]
+
+all = [
+  "plotly>=5.15",
+  "kaleido>=0.2.1",
+  "jupyterlab>=4",
+  "pywin32>=311; platform_system == 'Windows'"
+]
+
+[tool.setuptools]
+# classic src layout: packages live under ./utils4dd
+package-dir = {"" = "utils4dd"}
+
+[tool.setuptools.packages.find]
+where = ["utils4dd"]
+include = ["utils4dd*"]   # finds utils4dd and any subpackages later
