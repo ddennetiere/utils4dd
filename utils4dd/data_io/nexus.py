@@ -69,44 +69,37 @@ class NexusFile(object):
 
 
 def write_nexus_file(filename, data_dict, verbose=False):
-    """Write a Nexus file from a structured dictionary describing scans.
+    """Write a Nexus file from a structured (possibly nested) dictionary.
 
-    The function expects ``data_dict`` to be a mapping where each key is a
-    group name (for example ``"Scan1"``) and each value is another mapping
-    describing fields for that group. Each scan group should contain the
-    main data array (commonly named ``'measurement'``) and its axis arrays
-    (commonly ``'x'`` and ``'y'``). The group may also contain additional
-    arrays and a ``'metadata'`` dict.
+    This function supports nested dictionaries so you can group measured
+    fields by instrument or actuator. Each top-level key in ``data_dict``
+    becomes a group under the file's ``entry`` (e.g. ``/entry/Scan1``).
 
-    The function will create a top-level group for each scan (e.g.
-    ``/Scan1``), write the arrays as :class:`nexusformat.nexus.NXfield` nodes
-    (e.g. ``/Scan1/measurement``, ``/Scan1/x``, ``/Scan1/y``), write
-    metadata under ``/Scan1/metadata/*``, and add an ``/Scan1/data``
-    :class:`nexusformat.nexus.NXdata` node that links the main data to its
-    axes using :class:`nexusformat.nexus.NXlink`.
+    Group specification rules
+    -------------------------
+    - Sub-dictionaries become nested NXgroups (for grouping instruments,
+      actuators, etc.).
+    - Values that are arrays/scalars or dicts with a ``'data'`` key become
+      NXfield nodes. The dict form may include optional ``'name'`` and
+      ``'units'`` keys.
+    - Per-group metadata is provided with the ``'metadata'`` dict; each
+      metadata item is written as an NXfield under ``.../metadata/``.
+    - To mark the main dataset for a group, set ``'default'`` to a string
+      path that points to the field (relative to the group's path, e.g.
+      ``'instrument1/slope'``) or to an absolute path starting with ``/``.
+    - To set axes for that main dataset, provide ``'default_axes'`` as a
+      list of relative (or absolute) paths to the axis fields.
 
     Parameters
     ----------
     filename : str or pathlib.Path
         Output Nexus filename (will be created/overwritten).
     data_dict : dict
-        Mapping of group_name -> group_spec, where ``group_spec`` is a
-        dictionary with keys for arrays and metadata. Expected keys:
-
-        - ``'measurement'`` (or another key specified by ``'data'``) : ndarray or dict
-            The main data array (2D for images, 1D for scans) or dict containing data and optional name and units.
-        - axis arrays such as ``'x'``, ``'y'`` : 1D ndarray, optionnal
-        - ``'data'`` : str, optional
-            Name of the key that contains the main data.
-        - ``'data_axes'`` : list of str, optional
-            List of axis keys (e.g. ``['y', 'x']``) indicating the order of
-            axes for NXdata. If omitted, the function will try to infer
-            sensible axes (``['y','x']`` for 2D data, ``['x']`` for 1D data).
-        - ``'metadata'`` : dict, optional
-            Mapping of metadata name -> value. Each becomes an NXfield under
-            ``/group/metadata``.
-        - other keys : ndarray, dict or scalar to be recorded as fields.
-
+        Mapping of group_name -> group_spec. ``group_spec`` may be nested
+        to represent instruments/actuators. Use ``'default'`` and
+        ``'default_axes'`` to link the main data to axes. Fields may be
+        provided as raw numpy arrays/scalars or as dictionaries
+        ``{'data': ..., 'name': ..., 'units': ...}``.
     verbose : bool, optional
         If True, prints the path of the written file.
 
@@ -117,35 +110,28 @@ def write_nexus_file(filename, data_dict, verbose=False):
 
     Example
     -------
-    >>> data_dict = {
-    ...     'Scan1': {  # Example of a complete 2D scan
-    ...         'measurement': {"data": np.random.rand(64, 128), "name":"my scan data", "units":"nm"},
-    ...         'x': {"data": np.linspace(0, 1, 128), "name":"measurement axis x", "units":"mm"},
-    ...         'y': {"data": np.linspace(0, 2, 64), "name":"measurement axis y", "units":"mm"},
-    ...         'data': 'measurement',
-    ...         'data_axes': ['y', 'x'],
-    ...         'metadata': {'operator': 'alice', 'date': '2025-10-31', "scan_type": "scan 2D"}
-    ...     },
-    ...     'Scan2': {  # Example of a complete 1D scan
-    ...         'scan_data': np.random.rand(64),
-    ...         'x': np.linspace(0, 1, 64),
-    ...         'data': 'scan_data',
-    ...         'data_axes': ['x'],
-    ...         'metadata': {'operator': 'paul', 'date': '2025-10-31', "scan_type": "scan 1D"}
-    ...     },
-    ...     'Scan3': {  # Example of a 1D scan with a data field but no axes
-    ...         'scan_data': np.random.rand(64),
-    ...         'x': np.linspace(0, 1, 64),
-    ...         'data': 'scan_data',
-    ...         'metadata': {'operator': 'paul', 'date': '2025-10-31', "scan_type": "scan 1D no axes"}
-    ...     },
-    ...     'Scan4': {  # Example of a 1D scan without a data field
-    ...         'scan_data': np.random.rand(64),
-    ...         'x': np.linspace(0, 1, 64),
-    ...         'metadata': {'operator': 'paul', 'date': '2025-10-31', "scan_type": "scan 1D no main data"}
-    ...     },
-    ... }
-    >>> write_nexus_file('out.nxs', data_dict, verbose=True)
+    The following example demonstrates the nested structure that the
+    function supports. In particular ``Scan1`` has its main data stored in
+    ``Scan1/instrument1/slope`` and its axes in
+    ``Scan1/actuator1/y`` and ``Scan1/actuator1/x``::
+
+        data_dict = {
+            'Scan1': {
+                'instrument1': {
+                    'slope': {'data': np.random.rand(64, 128), 'name': 'slope', 'units': 'nm'},
+                    'metadata': {'description': 'instrument measurement data', 'calibration': 1.23}
+                },
+                'actuator1': {
+                    'x': {'data': np.linspace(0, 1, 128), 'name': 'x', 'units': 'mm'},
+                    'y': {'data': np.linspace(0, 2, 64), 'name': 'y', 'units': 'mm'}
+                },
+                'default': 'instrument1/slope',
+                'default_axes': ['actuator1/y', 'actuator1/x'],
+                'metadata': {'operator': 'alice', 'date': '2025-10-31', 'scan_type': 'scan 2D'}
+            }
+        }
+
+        write_nexus_file('out.nxs', data_dict, verbose=True)
     """
 
     nexus_file = Path(filename)
@@ -153,56 +139,103 @@ def write_nexus_file(filename, data_dict, verbose=False):
         # Create a standard entry (optional but customary)
         f['entry'] = NXentry()
 
-        for group_name, spec in data_dict.items():
-            # create a group for this scan under the NXentry so defaults are allowed
-            group_path = f"entry/{group_name}"
-            f[group_path] = NXgroup()
+        def _write_field(base, key, val):
+            """Write a single field under base/key from val which may be ndarray, scalar, list or dict with 'data'."""
+            if isinstance(val, dict):
+                data = val.get('data')
+                name = val.get('name', key)
+                units = val.get('units', None)
+                if units is not None:
+                    f[f"{base}/{key}"] = NXfield(data, name=name, units=units)
+                else:
+                    f[f"{base}/{key}"] = NXfield(data, name=name)
+            else:
+                print("raw data field")
+                if isinstance(val, list):
+                    val = np.array(val)
+                try:
+                    f[f"{base}/{key}"] = NXfield(val, name=key)
+                except TypeError as e:
+                    raise TypeError(f"Cannot write field '{key}' under '{base}': {e}")
 
-            # write all arrays (fields) found in the group spec except metadata
+        def write_spec(base_path, spec):
+            """Recursively write a specification dictionary under base_path.
+
+            - sub-dictionaries become NXgroup children
+            - arrays/scalars become NXfield nodes
+            - 'metadata' dict creates a metadata group of NXfields
+            - if 'data' is present, create an NXdata node at base_path/data
+              that links to the referenced field and its axes
+            """
+
+            # First create child groups and fields
             for key, val in spec.items():
-                if key == 'metadata' or key == 'data' or key == 'data_axes':
+                if key in ('default', 'default_axes', 'metadata'):
                     continue
-                # write numpy arrays or scalars as NXfield
-                if isinstance(val, (np.ndarray, int, float)) or np.isscalar(val):
-                    f[f"{group_path}/{key}"] = NXfield(val, name=key)
-                elif isinstance(val, dict):
-                    f[f"{group_path}/{key}"] = NXfield(val["data"], name=val.get("name", key), units=val.get("units", ""))
+                node_path = f"{base_path}/{key}"
+                if isinstance(val, dict) and  val.get("data") is None:
+                    # nested subgroup
+                    f[node_path] = NXgroup()
+                    write_spec(node_path, val)
+                else:
+                    # write scalar or array as field
+                    _write_field(base_path, key, val)
 
-            # write metadata
+            # Write metadata if present
             metadata = spec.get('metadata', {}) or {}
             if metadata:
-                f[f"{group_path}/metadata"] = NXgroup()
+                meta_path = f"{base_path}/metadata"
+                f[meta_path] = NXgroup()
                 for mk, mv in metadata.items():
-                    f[f"{group_path}/metadata/{mk}"] = NXfield(mv, name=mk)
+                    f[f"{meta_path}/{mk}"] = NXfield(mv, name=mk)
 
-            # determine which key is the main data
-            main_key = spec.get('data', None)
-            if main_key is not None:
-                main_array = spec.get(main_key, None)
-                if isinstance(main_array, dict):
-                    main_array = main_array["data"]
-                elif isinstance(main_array, list):
-                    main_array = np.array(main_array)
-                if main_array is None:
-                    raise ValueError(f"No array found for group '{group_name}' to use as main data")
+            # Create NXdata if requested
+            if 'default' in spec:
+                data_ref = spec['default']
+                # Resolve data reference to a full path (relative to base_path if no leading slash)
+                if isinstance(data_ref, str):
+                    if data_ref.startswith('/'):
+                        data_path = data_ref.lstrip('/')
+                    else:
+                        data_path = f"{base_path}/{data_ref}"
+                else:
+                    # If user provided raw array as 'data', write it under base_path/data_array
+                    tmp_name = 'data_array'
+                    f[f"{base_path}/{tmp_name}"] = NXfield(data_ref, name=tmp_name)
+                    data_path = f"{base_path}/{tmp_name}"
 
-                # establish axis links
-                axes = spec.get('data_axes', None)
+                # collect axes links
+                axes = spec.get('default_axes', []) or []
                 axis_links = []
-                if axes is not None:
-                    for ax in axes:
-                        try:
-                            axis_field = f[f"{group_path}/{ax}"]
-                        except Exception:
-                            raise KeyError(f"Axis '{ax}' not found in group '{group_name}'")
-                        axis_links.append(NXlink(axis_field))
-                    assert len(axis_links) == main_array.ndim, \
-                        f"Number of axes ({len(axis_links)}) does not match data dimensions ({main_array.ndim})"
+                for ax in axes:
+                    if isinstance(ax, str):
+                        if ax.startswith('/'):
+                            ax_path = ax.lstrip('/')
+                        else:
+                            ax_path = f"{base_path}/{ax}"
+                    else:
+                        raise TypeError("default_axes entries must be strings specifying relative paths to axis fields")
+                    try:
+                        axis_field = f[ax_path]
+                    except Exception:
+                        raise KeyError(f"Axis '{ax}' (resolved to '{ax_path}') not found under '{base_path}'")
+                    axis_links.append(NXlink(axis_field))
 
-                main_field = f[f"{group_path}/{main_key}"]
-                # create NXdata linking the main data to its axes
+                try:
+                    main_field = f[data_path]
+                except Exception:
+                    raise KeyError(f"Data field '{data_ref}' (resolved to '{data_path}') not found under '{base_path}'")
+
                 nxdata = NXdata(NXlink(main_field), axis_links)
-                f[f"{group_path}/data"] = nxdata
+                f[f"{base_path}/data"] = nxdata
+
+        # Create each top-level scan group under the NXentry and write its spec
+        for group_name, spec in data_dict.items():
+            group_path = f"entry/{group_name}"
+            f[group_path] = NXgroup()
+            if not isinstance(spec, dict):
+                raise TypeError(f"Expected a dict for group '{group_name}', got {type(spec)}")
+            write_spec(group_path, spec)
 
     if verbose:
         print(f"Saved Nexus file: {nexus_file}")
@@ -214,25 +247,27 @@ if __name__ == "__main__":
     print(fin.df)
 
     data_dict = {
-         'Scan1': {  # Example of a complete 2D scan
-             'measurement': {"data": np.random.rand(64, 128), "name":"my scan data", "units":"nm"},
-             'x': {"data": np.linspace(0, 1, 128), "name":"measurement axis x", "units":"mm"},
-             'y': {"data": np.linspace(0, 2, 64), "name":"measurement axis y", "units":"mm"},
-             'data': 'measurement',
-             'data_axes': ['y', 'x'],
+         'Scan1': {  # Example of a nested scan: instrument + actuator
+             'instrument1': {'slope': {"data": np.random.rand(64, 128), "name":"my scan main data", "units":"nm"},
+                             'metadata': {'description': 'instrument measurement data', "calibration factor": 1.23}},
+             'actuator1':{'x': {"data": np.linspace(0, 1, 128), "name":"measurement axis x", "units":"mm"},
+                          'y': {"data": np.linspace(0, 2, 64), "name":"measurement axis y", "units":"mm"},},
+             # top-level data points to nested instrument data; axes point to nested actuator fields
+             'default': 'instrument1/slope',
+             'default_axes': ['actuator1/y', 'actuator1/x'],
              'metadata': {'operator': 'alice', 'date': '2025-10-31', "scan_type": "scan 2D"}
          },
-         'Scan2': {  # Example of a complete 1D scan
-             'scan_data': np.random.rand(64),
-             'x': np.linspace(0, 1, 64),
-             'data': 'scan_data',
-             'data_axes': ['x'],
+         'Scan2': {  # Example of a complete 1D scan without subgroups
+             'scan_data': {'data':np.random.rand(64), "units":"counts", "name":"scan main data"},
+             'x': {"data":np.linspace(0, 1, 64), "units":"mm", "name":"scan axis x"},
+             'default': 'scan_data',
+             'default_axes': ['x'],
              'metadata': {'operator': 'paul', 'date': '2025-10-31', "scan_type": "scan 1D"}
          },
          'Scan3': {  # Example of a 1D scan with a data field but no axes
              'scan_data': np.random.rand(64),
              'x': np.linspace(0, 1, 64),
-             'data': 'scan_data',
+             'default': 'scan_data',
              'metadata': {'operator': 'paul', 'date': '2025-10-31', "scan_type": "scan 1D no axes"}
          },
          'Scan4': {  # Example of a 1D scan without a data field
