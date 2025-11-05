@@ -26,7 +26,8 @@ dependencies = [
   "scipy>=1.13",
   "pandas>=2.3",
   "xarray>=2024.6",
-  "xraylib>=4.2.0"
+  "xraylib>=4.2.0",
+  "pyqt5",
 ]
 
 [project.optional-dependencies]
