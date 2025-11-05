@@ -275,5 +275,6 @@ if __name__ == "__main__":
              'x': np.linspace(0, 1, 64),
              'metadata': {'operator': 'paul', 'date': '2025-10-31', "scan_type": "scan 1D no main data"}
          },
+         'metadata': {"file description": "Example Nexus file created with utils4dd" }
      }
     write_nexus_file(r'D:\Dennetiere\Programmes_Python\Sandbox\test_nexus_write_utils4dd.nxs', data_dict, verbose=True)
