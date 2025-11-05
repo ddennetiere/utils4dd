@@ -6,9 +6,8 @@ import csv
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTreeWidget, QTreeWidgetItem, QPushButton,
                              QFileDialog, QSplitter, QLabel, QMessageBox, 
-                              QFrame,  QDialog)
-from PyQt5.QtSvg import QGraphicsSvgItem, QSvgRenderer
-from PyQt5.QtWidgets import QGraphicsScene, QGraphicsView, QMainWindow, QApplication
+                              QFrame, QDialog, QComboBox, QDialogButtonBox)
+
 
 from PyQt5.QtCore import Qt, pyqtSignal, QMimeData,  QByteArray
 from PyQt5.QtGui import QFont, QDrag, QPixmap, QImage
@@ -659,6 +658,42 @@ class PlotCanvas(FigureCanvas):
             return False, f"Erreur lors de l'export: {str(e)}"
 
 
+class AxisSelectionDialog(QDialog):
+    """Dialog to choose two axes (X and Y) from a list of candidate axis names."""
+    def __init__(self, axis_names, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Sélection des axes pour scatter")
+        self.setModal(True)
+        self.resize(360, 120)
+
+        self.axis_names = axis_names or []
+
+        layout = QVBoxLayout(self)
+
+        label = QLabel("Sélectionnez l'axe X et l'axe Y (par nom):")
+        layout.addWidget(label)
+
+        row = QHBoxLayout()
+        self.combo_x = QComboBox()
+        self.combo_y = QComboBox()
+        self.combo_x.addItems(self.axis_names)
+        self.combo_y.addItems(self.axis_names)
+        row.addWidget(QLabel("X:"))
+        row.addWidget(self.combo_x)
+        row.addWidget(QLabel("Y:"))
+        row.addWidget(self.combo_y)
+        layout.addLayout(row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def get_selection(self):
+        """Return the selected (x_name, y_name) tuple."""
+        return (self.combo_x.currentText(), self.combo_y.currentText())
+
+
 class HDF5TreeWidget(QTreeWidget):
     """Widget personnalisé pour explorer la structure HDF5 avec drag & drop"""
     
@@ -1118,11 +1153,12 @@ class HDF5Explorer(QMainWindow):
 
                         # assign axes to canvas: for 1D main datasets map axis -> x_axis
                         # for 2D main datasets map last axis -> x_axis (columns), first axis -> secondary_x (rows)
+                        scatter_flag = False
                         if axes_found:
                             main_shape = getattr(main_ds, 'shape', None) or ()
-                            # map last axis to x_axis if present
+                            # map last axis to x_axis if present 
                             last = axes_found[-1] if len(axes_found) >= 1 else None
-                            if last is not None:
+                            if len(main_shape) == 1 and len(axes_found) == 1 and last is not None:
                                 try:
                                     axis_len = len(last)
                                 except Exception:
@@ -1130,8 +1166,79 @@ class HDF5Explorer(QMainWindow):
                                 expected = main_shape[-1] if len(main_shape) >= 1 else None
                                 if expected is None or axis_len == expected:
                                     self.plot_canvas.add_x_axis_dataset(last[:], last.name.split('/')[-1])
+                            if len(main_shape) == 1 and len(axes_found) > 1 and last is not None:
+                                # Multiple candidate axes found for a 1D main dataset.
+                                # Let the user choose which two axes to use for a scatter plot.
+                                try:
+                                    # Build a list of non-None candidate axes and names
+                                    candidates = [ax for ax in axes_found if ax is not None]
+                                    names = [ax.name.split('/')[-1] for ax in candidates]
+
+                                    if len(names) < 2:
+                                        QMessageBox.information(self, "Axes insuffisants", "Pas assez d'axes candidats pour créer un scatter.")
+                                    else:
+                                        dlg = AxisSelectionDialog(names, parent=self)
+                                        if dlg.exec_() == QDialog.Accepted:
+                                            x_name, y_name = dlg.get_selection()
+                                            # find corresponding datasets (match by last path component)
+                                            x_ds = next((ax for ax in candidates if ax.name.split('/')[-1] == x_name), None)
+                                            y_ds = next((ax for ax in candidates if ax.name.split('/')[-1] == y_name), None)
+
+                                            if x_ds is None or y_ds is None:
+                                                QMessageBox.warning(self, "Axe introuvable", "Les axes sélectionnés n'ont pas pu être résolus.")
+                                            else:
+                                                try:
+                                                    x_vals = x_ds[:] if isinstance(x_ds, h5py.Dataset) else np.asarray(x_ds)
+                                                except Exception:
+                                                    x_vals = np.asarray(x_ds)
+                                                try:
+                                                    y_vals = y_ds[:] if isinstance(y_ds, h5py.Dataset) else np.asarray(y_ds)
+                                                except Exception:
+                                                    y_vals = np.asarray(y_ds)
+
+                                                self.plot_canvas.clear_plot()
+                                                # color the points by the main dataset values if shapes match, otherwise plain
+                                                cvals = None
+                                                try:
+                                                    cvals = main_array
+                                                    # flatten if necessary
+                                                    if getattr(cvals, 'ndim', 1) > 1:
+                                                        cvals = cvals.flatten()
+                                                except Exception:
+                                                    cvals = None
+
+                                                try:
+                                                    if cvals is not None and len(cvals) == len(x_vals) and len(cvals) == len(y_vals):
+                                                        sc = self.plot_canvas.axes.scatter(x_vals, y_vals, c=cvals, s=10, cmap='viridis')
+                                                        # create colorbar for scatter
+                                                        try:
+                                                            if getattr(self.plot_canvas, '_img_colorbar', None) is not None:
+                                                                try:
+                                                                    self.plot_canvas._img_colorbar.remove()
+                                                                except Exception:
+                                                                    pass
+                                                            cax = self.plot_canvas.fig.add_axes([0.92, 0.11, 0.02, 0.77])
+                                                            self.plot_canvas._img_colorbar = self.plot_canvas.fig.colorbar(sc, cax=cax)
+                                                        except Exception:
+                                                            pass
+                                                    else:
+                                                        self.plot_canvas.axes.scatter(x_vals, y_vals, s=10)
+
+                                                    ux = x_ds.name.split('/')[-1]
+                                                    uy = y_ds.name.split('/')[-1]
+                                                    uxx = x_ds.attrs.get('units', '') if hasattr(x_ds, 'attrs') else ''
+                                                    uyy = y_ds.attrs.get('units', '') if hasattr(y_ds, 'attrs') else ''
+                                                    self.plot_canvas.axes.set_xlabel(f"{ux} ({uxx})")
+                                                    self.plot_canvas.axes.set_ylabel(f"{uy} ({uyy})")
+                                                    self.plot_canvas.axes.set_title(display_name)
+                                                    self.plot_canvas.draw()
+                                                    scatter_flag = True
+                                                except Exception as e:
+                                                    QMessageBox.warning(self, "Erreur scatter", f"Erreur lors de la création du scatter: {e}")
+                                except Exception as e:
+                                    QMessageBox.warning(self, "Erreur", f"Erreur lors de la sélection des axes: {e}")
                             # if 2D and first axis present, map to secondary_x (rows)
-                            if len(main_shape) == 2 and len(axes_found) > 1 and axes_found[0] is not None:
+                            elif len(main_shape) == 2 and len(axes_found) > 1 and axes_found[0] is not None:
                                 first = axes_found[0]
                                 try:
                                     axis_len0 = len(first)
@@ -1140,8 +1247,10 @@ class HDF5Explorer(QMainWindow):
                                 expected0 = main_shape[0]
                                 if axis_len0 == expected0:
                                     self.plot_canvas.add_secondary_x_dataset(first[:], first.name.split('/')[-1])
-
-                        self._display_as_plot(main_ds, main_array, display_name)
+                                self.plot_canvas.add_x_axis_dataset(last[:], last.name.split('/')[-1])
+                                
+                        if not scatter_flag:
+                            self._display_as_plot(main_ds, main_array, display_name)
                         return
                     except Exception as e:
                         QMessageBox.warning(self, "Erreur", f"Impossible d'afficher NXdata: {e}")

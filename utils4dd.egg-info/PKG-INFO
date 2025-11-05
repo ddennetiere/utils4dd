@@ -1,18 +1,17 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: utils4dd
-Version: 1.0
-Summary: Python Distribution Utilities
+Version: 2025.10.30
+Summary: Python tools for David Dennetiere
 Author: David Dennetiere
-Author-email: david.dennetiere@synchrotron-soleil.fr
+Author-email: David Dennetiere <david.dennetiere@synchrotron-soleil.fr>
+Project-URL: Homepage, https://github.com/ddennetiere/utils4dd
+Keywords: X-Ray,plot,optics
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: CEA CNRS Inria Logiciel Libre License, version 2.1 (CeCILL-2.1)
+Classifier: Operating System :: OS Independent
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Physics
 Classifier: Development Status :: 4 - Beta
-Classifier: Environment :: Console
-Classifier: Environment :: Web Environment
-Classifier: Intended Audience :: End Users/Desktop
-Classifier: Intended Audience :: Developers
-Classifier: License :: OSI Approved :: Python Software Foundation License
-Classifier: Operating System :: Microsoft :: Windows
-Classifier: Programming Language :: Python
-Classifier: Topic :: Software Development :: Bug Tracking
 Requires: setuptools
 Requires: numpy
 Requires: pandas
@@ -21,4 +20,24 @@ Requires: pytables
 Requires: tkinter
 Requires: plotly
 Requires: scipy
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
 License-File: LICENSE
+Requires-Dist: numpy>=1.24
+Requires-Dist: scipy>=1.13
+Requires-Dist: pandas>=2.3
+Requires-Dist: xarray>=2024.6
+Requires-Dist: xraylib>=4.2.0
+Provides-Extra: viz
+Requires-Dist: plotly>=5.15; extra == "viz"
+Requires-Dist: kaleido>=0.2.1; extra == "viz"
+Provides-Extra: windows
+Requires-Dist: pywin32>=311; platform_system == "Windows" and extra == "windows"
+Provides-Extra: all
+Requires-Dist: plotly>=5.15; extra == "all"
+Requires-Dist: kaleido>=0.2.1; extra == "all"
+Requires-Dist: jupyterlab>=4; extra == "all"
+Requires-Dist: pywin32>=311; platform_system == "Windows" and extra == "all"
+Dynamic: author
+Dynamic: license-file
+Dynamic: requires

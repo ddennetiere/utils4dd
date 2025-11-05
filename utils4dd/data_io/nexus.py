@@ -275,6 +275,18 @@ if __name__ == "__main__":
              'x': np.linspace(0, 1, 64),
              'metadata': {'operator': 'paul', 'date': '2025-10-31', "scan_type": "scan 1D no main data"}
          },
+         'Scan5': {  # Example of a scatter scan with a data field having the same dimension as axes
+             'scatter': {'intensity': {"data": np.random.rand(1000), "name":"my scan main data"},
+                         'metadata': {'description': 'instrument measurement data', "calibration factor": 1.23},
+                         'x': {"data": np.random.normal(0, 1, 1000), "name":"x position", "units":"m"},
+                         'y': {"data": np.random.normal(0, 2, 1000), "name":"y position", "units":"m"},
+                         'xp': {"data": np.random.normal(0, 2, 1000)*1e-3 + np.random.rand(1000)*1e-4, "name":"x angle", "units":"rad"},
+                         'yp': {"data": np.random.normal(0, 1, 1000)*1e-3 + np.random.rand(1000)*1e-4, "name":"y angle", "units":"rad"},
+                         },
+             'default': 'scatter/intensity',
+             'default_axes': ['scatter/y', 'scatter/x','scatter/xp','scatter/yp'],
+             'metadata': {'operator': 'bob', 'date': '2025-10-31', "scan_type": "scatter data where data and axes have same dimension"}
+         },
          'metadata': {"file description": "Example Nexus file created with utils4dd" }
      }
     write_nexus_file(r'D:\Dennetiere\Programmes_Python\Sandbox\test_nexus_write_utils4dd.nxs', data_dict, verbose=True)
