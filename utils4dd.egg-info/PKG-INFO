@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: utils4dd
-Version: 2025.10.30
+Version: 2025.11.5
 Summary: Python tools for David Dennetiere
 Author: David Dennetiere
 Author-email: David Dennetiere <david.dennetiere@synchrotron-soleil.fr>
@@ -28,6 +28,7 @@ Requires-Dist: scipy>=1.13
 Requires-Dist: pandas>=2.3
 Requires-Dist: xarray>=2024.6
 Requires-Dist: xraylib>=4.2.0
+Requires-Dist: pyqt5
 Provides-Extra: viz
 Requires-Dist: plotly>=5.15; extra == "viz"
 Requires-Dist: kaleido>=0.2.1; extra == "viz"
