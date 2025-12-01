@@ -1,9 +1,13 @@
-import tables
+import h5py
 import plotly.express as px
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from nexusformat.nexus import NXdata, NXentry, NXfield, nxopen, NXgroup, NXlink
+import warnings
+import xarray as xr
+from scipy.interpolate import LinearNDInterpolator
+
 
 
 class NexusFile(object):
@@ -27,26 +31,49 @@ class NexusFile(object):
     def __init__(self, filename, data_root='scan/scan_data', x=None):
         data = {}
         self.images = {}
-        with tables.open_file(filename) as fin:
-            for node in fin.iter_nodes('/' + data_root):
-                node_data = np.array(node)
-                if node_data.ndim == 1:
-                    data[node.get_attr('long_name').decode()] = node_data
-                elif node_data.ndim == 3:
-                    self.images[node.get_attr('long_name').decode()] = node_data
-        self.df = pd.DataFrame(data)
-        if x is not None:
-            self.df = self.df.set_index(x)
+        with h5py.File(filename, 'r') as fin:
+            try:
+                group = fin[data_root]
+            except KeyError:
+                raise ValueError(f"Data root '{data_root}' not found in the file.")
+
+            for key, node in group.items():
+                if isinstance(node, h5py.Dataset):
+                    node_data = np.array(node)
+                    if node.attrs.get('long_name', key) is None:
+                        name = key
+                    else:
+                        if isinstance(node.attrs.get('long_name', key), bytes):
+                            name = node.attrs.get('long_name', key).decode()
+                        else:
+                            name = node.attrs.get('long_name', key)
+                    if node_data.ndim == 1:
+                        data[name] = node_data
+                    elif node_data.ndim == 3:
+                        self.images[name] = node_data
+
+        self.homogeneous_data = False
+        try:
+            self.df = pd.DataFrame(data)
+            if x is not None:
+                self.df = self.df.set_index(x)
+            self.homogeneous_data = True
+        except ValueError:
+            self.df = data 
+            warnings.warn("Data could not be formed into a homogeneous DataFrame")
         self._xarray = None
 
     def __repr__(self):
         return self.df.__repr__()
 
     def _repr_html_(self):
+        if not self.homogeneous_data:
+            return self.__repr__()
         return self.df._repr_html_()
 
     @property
     def xarray(self):
+        assert self.homogeneous_data, "DataFrame is not homogeneous; cannot convert to xarray."
         return self.df.to_xarray()
 
     @xarray.setter
@@ -60,6 +87,7 @@ class NexusFile(object):
         self.df[key] = value
 
     def plot(self, axtype="linlin"):
+        assert self.homogeneous_data, "DataFrame is not homogeneous; cannot convert to xarray."
         fig = px.line(self.xarray)
         if axtype[3:] == 'log':
             fig.update_yaxes(type="log")
@@ -67,6 +95,75 @@ class NexusFile(object):
             fig.update_xaxes(type="log")
         return fig
 
+
+class PycarpemNexusFile(NexusFile):
+    """Specialized NexusFile class for Pycarpem Nexus files.
+
+    This class extends ``NexusFile`` to handle Pycarpem-specific Nexus
+    files where data are stored under ``'entry/data'``.
+
+    Parameters
+    ----------
+    filename : str or pathlib.Path
+        Path to the Pycarpem Nexus file to open.
+    x : str, optional
+        Column name to set as index on the resulting DataFrame if provided.
+    """
+    def __init__(self, filename, data_root='entry/data/reflectivity_data'):
+        super().__init__(filename, data_root=data_root)
+
+    def get_reflectivity(self, polarisation=0):
+        """get_reflectivity Interpolates the sheared reflectivity data onto a regular grid.
+
+
+        Parameters
+        ----------
+        polarisation : int, optional
+            _description_, by default 0
+
+        Returns
+        -------
+        xarray.DataArray
+            dataarray with dimensions (E, theta) on a regular grid
+        """
+        Z = self.images["reflectivity"][polarisation]  # 2D array (E, theta)
+        x = self.df["incidence"]
+        y = self.df["photon_energy"]
+        offsets = self.df["incidence_offset"]
+        n, m = Z.shape # ligne = E = y, colonne = theta = x
+
+        # --- 1) Build original sheared coordinates ---
+        X, Y = np.meshgrid(x, y, indexing="xy")      # (n,m)
+        X = X + offsets[:, None]                     # apply column offset
+        # Flatten for griddata
+        # pts = np.column_stack([X.ravel(), Y.ravel()])
+        pts = []
+        vals = []
+        for i in range(m):
+            for j in range(n):
+                pts.append( (X[j,i], Y[j,i]) )
+                vals.append( Z[j,i] )
+        # vals = Z.ravel()
+
+        # --- 2) Build new regular 1D target coordinates ---
+        theta_points = np.linspace(X.min(), X.max(), n)
+        E_points = y.copy()
+
+        TH, EE = np.meshgrid(theta_points, E_points, indexing="xy")
+
+        # --- 3) Interpolate ---
+        interp = LinearNDInterpolator(pts, vals, fill_value=np.nan)
+        Z_new = interp(TH, EE)
+
+        # --- 4) Package into xarray ---
+        da = xr.DataArray(
+            Z_new,
+            dims=("E", "theta"),
+            coords={"theta": theta_points, "E": E_points},
+            name="Z"
+        )
+
+        return da
 
 def write_nexus_file(filename, data_dict, verbose=False):
     """Write a Nexus file from a structured (possibly nested) dictionary.
