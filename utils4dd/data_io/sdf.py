@@ -2,6 +2,7 @@
 import struct
 import numpy as np
 from pathlib import Path
+from .nexus import write_nexus_file
 
 
 def data_type_info(dtype_code):
@@ -144,6 +145,29 @@ def read_MINT_sdf_header(f,  verbose=0):
         for k, v in hdr.items():
             print(f"  {k}: {v}")
     return hdr, header_size
+
+def save_sdf_as_nexus(sdf_path, nexus_path=None, instrument="WLI", verbose=0):
+    """
+    Converts SDF data to Nexus format
+    sdf_path: Path to input SDF file
+    nexus_path: Path to output Nexus file
+    header: dict containing SDF header info
+    array: 2D numpy array with SDF data
+    """
+    if nexus_path is None:
+        nexus_path = sdf_path.with_suffix('.nxs')
+    header, array, header_size = load_sdf(Path(sdf_path), verbose=verbose, instrument=instrument)
+    datadict={
+        "data0":{"image":{"data":array, "name":"image", "units":"m"},
+                 "x": {"data":np.linspace(0, header['X']*header['Xscale'], header["X"]),"name":"x", "units":"m", "long_name":"Horizontal coordinate"},
+                 "y": {"data":np.linspace(0, header['Y']*header['Yscale'], header["Y"]),"name":"y", "units":"m", "long_name":"Vertical coordinate"},
+                 "title":sdf_path,
+                "default":"image",
+                "default_axes":["y","x"],},
+        "metadata":header
+    }
+    nexus_file = write_nexus_file(Path(nexus_path), datadict, verbose=verbose)
+    return nexus_file
 
 # Example usage
 if __name__ == "__main__":
