@@ -3,7 +3,7 @@ import plotly.express as px
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from nexusformat.nexus import NXdata, NXentry, NXfield, nxopen, NXgroup, NXlink
+from nexusformat.nexus import NXdata, NXentry, NXfield, nxopen, NXgroup, NXlink, NXroot, NXinstrument, NXsample, NXcollection, NXpositioner, NXdetector
 import warnings
 import xarray as xr
 from scipy.interpolate import LinearNDInterpolator
@@ -165,6 +165,43 @@ class PycarpemNexusFile(NexusFile):
 
         return da
 
+def _guess_nxclass(name):
+
+    lname = name.lower()
+
+    if "instrument" in lname:
+        return NXinstrument
+    if "detector" in lname:
+        return NXdetector
+    if any(k in lname for k in ["actuator", "motor", "stage", "positioner"]):
+        return NXpositioner
+    if "sample" in lname:
+        return NXsample
+
+    return NXcollection
+
+
+def _set_interpretation(field):
+
+    arr = np.asarray(field.nxdata)
+
+    if arr.ndim == 1:
+        field.attrs["interpretation"] = "spectrum"
+    elif arr.ndim == 2:
+        field.attrs["interpretation"] = "image"
+    elif arr.ndim > 2:
+        field.attrs["interpretation"] = "volume"
+
+
+def _resolve(base, rel):
+    if rel.startswith("/"):
+        return rel.strip("/")
+    return f"{base}/{rel}"
+
+
+# -------------------------------------------------
+# Main writer
+# -------------------------------------------------
 def write_nexus_file(filename, data_dict, verbose=False):
     """Write a Nexus file from a structured (possibly nested) dictionary.
 
@@ -181,7 +218,7 @@ def write_nexus_file(filename, data_dict, verbose=False):
       ``'units'`` keys.
     - Per-group metadata is provided with the ``'metadata'`` dict; each
       metadata item is written as an NXfield under ``.../metadata/``.
-    - To mark the main dataset for a group, set ``'default'`` to a string
+    - To mark the main dataset for a NXdata node, set ``'default'`` to a string
       path that points to the field (relative to the group's path, e.g.
       ``'instrument1/slope'``) or to an absolute path starting with ``/``.
     - To set axes for that main dataset, provide ``'default_axes'`` as a
@@ -232,111 +269,165 @@ def write_nexus_file(filename, data_dict, verbose=False):
     """
 
     nexus_file = Path(filename)
-    with nxopen(nexus_file, 'w') as f:
-        # Create a standard entry (optional but customary)
-        f['entry'] = NXentry()
 
-        def _write_field(base, key, val):
-            """Write a single field under base/key from val which may be ndarray, scalar, list or dict with 'data'."""
-            if isinstance(val, dict):
-                data = val.get('data')
-                name = val.get('name', key)
-                units = val.get('units', None)
-                if units is not None:
-                    f[f"{base}/{key}"] = NXfield(data, name=name, units=units)
-                else:
-                    f[f"{base}/{key}"] = NXfield(data, name=name)
+    root = NXroot()
+    root.attrs["default"] = "entry"
+    root["entry"] = NXentry()
+
+    nxdata_requests = []
+
+    # -------------------------------------------------
+    # PASS 1 - build structure
+    # -------------------------------------------------
+
+    def write_structure(base_path, spec):
+
+        group = root[base_path]
+
+        for key, val in spec.items():
+
+            if key in ("default", "default_axes", "metadata"):
+                continue
+
+            # subgroup
+            if isinstance(val, dict) and "data" not in val:
+
+                group[key] = _guess_nxclass(key)()
+                write_structure(f"{base_path}/{key}", val)
+
             else:
-                print("raw data field")
-                if isinstance(val, list):
-                    val = np.array(val)
-                try:
-                    f[f"{base}/{key}"] = NXfield(val, name=key)
-                except TypeError as e:
-                    raise TypeError(f"Cannot write field '{key}' under '{base}': {e}")
+                # field
+                if isinstance(val, dict) and "data" in val:
 
-        def write_spec(base_path, spec):
-            """Recursively write a specification dictionary under base_path.
+                    field = NXfield(val["data"], 
+                                    compression=None,
+                                    shuffle=False,
+                                    fletcher32=False,
+                                    scaleoffset=None,
+                                    chunks=None,)
 
-            - sub-dictionaries become NXgroup children
-            - arrays/scalars become NXfield nodes
-            - 'metadata' dict creates a metadata group of NXfields
-            - if 'data' is present, create an NXdata node at base_path/data
-              that links to the referenced field and its axes
-            """
+                    if "name" in val:
+                        field.attrs["long_name"] = val["name"]
 
-            # First create child groups and fields
-            for key, val in spec.items():
-                if key in ('default', 'default_axes', 'metadata'):
-                    continue
-                node_path = f"{base_path}/{key}"
-                if isinstance(val, dict) and  val.get("data") is None:
-                    # nested subgroup
-                    f[node_path] = NXgroup()
-                    write_spec(node_path, val)
+                    if "units" in val:
+                        field.attrs["units"] = val["units"]
+
                 else:
-                    # write scalar or array as field
-                    _write_field(base_path, key, val)
+                    field = NXfield(val, 
+                                    compression=None,
+                                    shuffle=False,
+                                    fletcher32=False,
+                                    scaleoffset=None,
+                                    chunks=None,)
 
-            # Write metadata if present
-            metadata = spec.get('metadata', {}) or {}
-            if metadata:
-                meta_path = f"{base_path}/metadata"
-                f[meta_path] = NXgroup()
-                for mk, mv in metadata.items():
-                    f[f"{meta_path}/{mk}"] = NXfield(mv, name=mk)
+                group[key] = field
+                _set_interpretation(field)
 
-            # Create NXdata if requested
-            if 'default' in spec:
-                data_ref = spec['default']
-                # Resolve data reference to a full path (relative to base_path if no leading slash)
-                if isinstance(data_ref, str):
-                    if data_ref.startswith('/'):
-                        data_path = data_ref.lstrip('/')
-                    else:
-                        data_path = f"{base_path}/{data_ref}"
-                else:
-                    # If user provided raw array as 'data', write it under base_path/data_array
-                    tmp_name = 'data_array'
-                    f[f"{base_path}/{tmp_name}"] = NXfield(data_ref, name=tmp_name)
-                    data_path = f"{base_path}/{tmp_name}"
+        if "metadata" in spec:
+            group["metadata"] = NXcollection()
+            for mk, mv in spec["metadata"].items():
+                group["metadata"][mk] = NXfield(mv)
 
-                # collect axes links
-                axes = spec.get('default_axes', []) or []
-                axis_links = []
-                for ax in axes:
-                    if isinstance(ax, str):
-                        if ax.startswith('/'):
-                            ax_path = ax.lstrip('/')
-                        else:
-                            ax_path = f"{base_path}/{ax}"
-                    else:
-                        raise TypeError("default_axes entries must be strings specifying relative paths to axis fields")
-                    try:
-                        axis_field = f[ax_path]
-                    except Exception:
-                        raise KeyError(f"Axis '{ax}' (resolved to '{ax_path}') not found under '{base_path}'")
-                    axis_links.append(NXlink(axis_field))
+        if "default" in spec:
+            nxdata_requests.append((base_path, spec))
 
-                try:
-                    main_field = f[data_path]
-                except Exception:
-                    raise KeyError(f"Data field '{data_ref}' (resolved to '{data_path}') not found under '{base_path}'")
+    entry = root["entry"]
 
-                nxdata = NXdata(NXlink(main_field), axis_links)
-                f[f"{base_path}/data"] = nxdata
+    for gname, spec in data_dict.items():
 
-        # Create each top-level scan group under the NXentry and write its spec
-        for group_name, spec in data_dict.items():
-            group_path = f"entry/{group_name}"
-            f[group_path] = NXgroup()
-            if not isinstance(spec, dict):
-                raise TypeError(f"Expected a dict for group '{group_name}', got {type(spec)}")
-            write_spec(group_path, spec)
+        if gname == "metadata":
+            continue
+
+        entry[gname] = NXcollection()
+        write_structure(f"entry/{gname}", spec)
+
+    if "metadata" in data_dict:
+        entry["metadata"] = NXcollection()
+        for k, v in data_dict["metadata"].items():
+            entry["metadata"][k] = NXfield(v)
+
+    # -------------------------------------------------
+    # PASS 2 - create NXdata as CHILD
+    # -------------------------------------------------
+
+    created_paths = []
+
+    for base_path, spec in nxdata_requests:
+
+        group = root[base_path]
+
+        # Convert existing group into NXdata
+        group.nxclass = "NXdata"
+        nxdata = group
+
+        # ---------- signal ----------
+        signal_path = _resolve(base_path, spec["default"])
+        signal_field = root[signal_path]
+        signal_key = signal_path.split("/")[-1]
+
+        nxdata.attrs["signal"] = signal_key
+
+        # link signal if not already present locally
+        if signal_key not in nxdata:
+            nxdata[signal_key] = NXlink(signal_field)
+
+        signal = np.asarray(signal_field.nxdata)
+
+        # ---------- axes ----------
+        axes_keys = []
+        axes_fields = []
+
+        for i, ax in enumerate(spec.get("default_axes", [])):
+
+            ax_path = _resolve(base_path, ax)
+            ax_field = root[ax_path]
+
+            ax_key = ax_path.split("/")[-1]
+
+            if ax_key not in nxdata:
+                nxdata[ax_key] = NXlink(ax_field)
+
+            ax_field.attrs["axis"] = i + 1
+
+            axes_keys.append(ax_key)
+            axes_fields.append(ax_field)
+
+        if axes_keys:
+            nxdata.attrs["axes"] = axes_keys
+
+        # scatter detection
+        if (
+            signal.ndim == 1
+            and len(axes_fields) > 1
+            and all(len(ax.nxdata) == len(signal) for ax in axes_fields)
+        ):
+            nxdata.attrs["interpretation"] = "point"
+            nxdata.attrs["plot_type"] = "scatter"
+
+        created_paths.append(base_path)
+
+
+    # -------------------------------------------------
+    # Default chain root → entry → last NXdata
+    # -------------------------------------------------
+
+    if created_paths:
+
+        deepest = created_paths[-1]
+
+        current = root
+        for part in deepest.split("/"):
+            current.attrs["default"] = part
+            current = current[part]
+
+    root.save(nexus_file, "w")
 
     if verbose:
-        print(f"Saved Nexus file: {nexus_file}")
+        print("Saved:", nexus_file)
+
     return nexus_file
+
+
 
 
 if __name__ == "__main__":
